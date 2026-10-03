@@ -88,12 +88,18 @@ class RPGGame:
                 return
             if 1 <= choice <= len(weapons):
                 weapon = weapons[choice - 1]
+                if weapon is self.player.equipped_weapon:
+                    print(f"⚔️ {weapon['name']} is already equipped!")
+                    return
                 self.player.inventory.remove(weapon)
-                self.player.equip_weapon(weapon)
-                print(f"⚔️ Equipped {weapon['name']}!")
-                
-                # Update quest progress
-                self.quest_manager.update_quest_progress(self.player, "weapon_equipped")
+                if self.player.equip_weapon(weapon):
+                    print(f"⚔️ Equipped {weapon['name']}!")
+                    
+                    # Update quest progress
+                    self.quest_manager.update_quest_progress(self.player, "weapon_equipped")
+                else:
+                    self.player.inventory.append(weapon)
+                    print(f"⚔️ {weapon['name']} is already equipped!")
         except ValueError:
             print("❌ Invalid choice!")
     
@@ -113,9 +119,15 @@ class RPGGame:
                 return
             if 1 <= choice <= len(armors):
                 armor = armors[choice - 1]
+                if armor is self.player.equipped_armor:
+                    print(f"🛡️ {armor['name']} is already equipped!")
+                    return
                 self.player.inventory.remove(armor)
-                self.player.equip_armor(armor)
-                print(f"🛡️ Equipped {armor['name']}!")
+                if self.player.equip_armor(armor):
+                    print(f"🛡️ Equipped {armor['name']}!")
+                else:
+                    self.player.inventory.append(armor)
+                    print(f"🛡️ {armor['name']} is already equipped!")
         except ValueError:
             print("❌ Invalid choice!")
     
@@ -189,7 +201,7 @@ class RPGGame:
             choice = input("Choose an option: ").strip()
             
             if choice == "1":
-                self.quest_manager.display_available_quests(self.player.level)
+                self.quest_manager.display_available_quests(self.player)
                 quest_choice = input("Choose a quest to start or press Enter to cancel: ").strip()
                 if quest_choice.isdigit():
                     index = int(quest_choice) - 1
@@ -232,6 +244,7 @@ class RPGGame:
             if 0 <= index < len(files):
                 filename = f'saves/{files[index]}'
                 self.player = Character.load_from_file(filename)
+                self.quest_manager.restore_player_state(self.player)
                 print(f"Loaded {filename}")
             else:
                 print("Invalid choice.")

@@ -1,7 +1,10 @@
 import json
+import os
 import random
 
 class Character:
+    INVENTORY_CAPACITY = 20
+
     def __init__(self, name, character_class):
         self.name = name
         self.character_class = character_class
@@ -79,7 +82,10 @@ class Character:
         print(f"All stats improved!")
         
     def add_item(self, item):
+        if len(self.inventory) >= self.INVENTORY_CAPACITY:
+            return False
         self.inventory.append(item)
+        return True
         
     def remove_item(self, item_name):
         for item in self.inventory:
@@ -89,14 +95,20 @@ class Character:
         return None
         
     def equip_weapon(self, weapon):
+        if weapon is self.equipped_weapon:
+            return False
         if self.equipped_weapon:
             self.inventory.append(self.equipped_weapon)
         self.equipped_weapon = weapon
+        return True
         
     def equip_armor(self, armor):
+        if armor is self.equipped_armor:
+            return False
         if self.equipped_armor:
             self.inventory.append(self.equipped_armor)
         self.equipped_armor = armor
+        return True
         
     def get_attack_power(self):
         base_attack = self.strength
@@ -152,12 +164,20 @@ class Character:
             'inventory': self.inventory,
             'equipped_weapon': self.equipped_weapon,
             'equipped_armor': self.equipped_armor,
-            'quests': self.quests,
-            'completed_quests': self.completed_quests
+            'quests': [q.to_dict() if hasattr(q, 'to_dict') else q for q in self.quests],
+            'completed_quests': [q.to_dict() if hasattr(q, 'to_dict') else q for q in self.completed_quests]
         }
         
-        with open(filename, 'w') as f:
-            json.dump(data, f, indent=2)
+        temp_filename = filename + '.tmp'
+        try:
+            with open(temp_filename, 'w') as f:
+                json.dump(data, f, indent=2)
+            os.replace(temp_filename, filename)
+        except BaseException:
+            # A crash mid-save must not corrupt the existing save file.
+            if os.path.exists(temp_filename):
+                os.remove(temp_filename)
+            raise
             
     @classmethod
     def load_from_file(cls, filename):
@@ -178,7 +198,7 @@ class Character:
         character.inventory = data['inventory']
         character.equipped_weapon = data['equipped_weapon']
         character.equipped_armor = data['equipped_armor']
-        character.quests = data['quests']
-        character.completed_quests = data['completed_quests']
+        character.quests = data.get('quests', [])
+        character.completed_quests = data.get('completed_quests', [])
         
         return character

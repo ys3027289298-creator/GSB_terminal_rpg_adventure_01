@@ -1,0 +1,19 @@
+{
+  "name": "Hero",
+  "character_class": "Warrior",
+  "level": 1,
+  "experience": 0,
+  "experience_to_next_level": 100,
+  "max_health": 120,
+  "current_health": 120,
+  "strength": 15,
+  "magic": 5,
+  "defense": 12,
+  "agility": 8,
+  "gold": 50,
+  "inventory": [],
+  "equipped_weapon": null,
+  "equipped_armor": null,
+  "quests": [],
+  "completed_quests": []
+}
