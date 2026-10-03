@@ -81,18 +81,18 @@ class CombatSystem:
         }
         
         enemy_data = base_enemies.get(enemy_type, base_enemies['goblin'])
-        
-        # Scale enemy to player level
-        level_multiplier = 1 + (player_level - 1) * 0.3
-        
+
+        # Scale enemy to player level (clamped, rounded to avoid float truncation)
+        level_multiplier = 1 + max(0, player_level - 1) * 0.3
+
         enemy = Enemy(
             name=enemy_data['name'],
-            health=int(enemy_data['health'] * level_multiplier),
-            attack=int(enemy_data['attack'] * level_multiplier),
-            defense=int(enemy_data['defense'] * level_multiplier),
-            exp_reward=int(enemy_data['exp'] * level_multiplier),
-            gold_reward=int(enemy_data['gold'] * level_multiplier),
-            loot=enemy_data['loot'].copy()
+            health=round(enemy_data['health'] * level_multiplier),
+            attack=round(enemy_data['attack'] * level_multiplier),
+            defense=round(enemy_data['defense'] * level_multiplier),
+            exp_reward=round(enemy_data['exp'] * level_multiplier),
+            gold_reward=round(enemy_data['gold'] * level_multiplier),
+            loot=[dict(item) for item in enemy_data['loot']]
         )
         
         return enemy
@@ -143,8 +143,10 @@ class CombatSystem:
             # Loot drop
             if enemy.loot and random.random() < 0.3:  # 30% chance for loot
                 loot_item = random.choice(enemy.loot)
-                player.add_item(loot_item)
-                print(f"🎁 You found: {loot_item['name']}!")
+                if player.add_item(loot_item):
+                    print(f"🎁 You found: {loot_item['name']}!")
+                else:
+                    print(f"🎒 Your inventory is full! You leave {loot_item['name']} behind.")
             
             return True
         

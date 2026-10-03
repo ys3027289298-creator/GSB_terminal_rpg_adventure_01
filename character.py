@@ -1,7 +1,11 @@
 import json
 import random
 
+from quests import Quest
+
 class Character:
+    INVENTORY_CAPACITY = 20
+
     def __init__(self, name, character_class):
         self.name = name
         self.character_class = character_class
@@ -79,7 +83,10 @@ class Character:
         print(f"All stats improved!")
         
     def add_item(self, item):
+        if len(self.inventory) >= self.INVENTORY_CAPACITY:
+            return False
         self.inventory.append(item)
+        return True
         
     def remove_item(self, item_name):
         for item in self.inventory:
@@ -89,14 +96,28 @@ class Character:
         return None
         
     def equip_weapon(self, weapon):
+        if weapon is self.equipped_weapon or weapon == self.equipped_weapon:
+            return False
+        if weapon in self.inventory:
+            self.inventory.remove(weapon)
         if self.equipped_weapon:
+            if len(self.inventory) >= self.INVENTORY_CAPACITY:
+                return False
             self.inventory.append(self.equipped_weapon)
         self.equipped_weapon = weapon
+        return True
         
     def equip_armor(self, armor):
+        if armor is self.equipped_armor or armor == self.equipped_armor:
+            return False
+        if armor in self.inventory:
+            self.inventory.remove(armor)
         if self.equipped_armor:
+            if len(self.inventory) >= self.INVENTORY_CAPACITY:
+                return False
             self.inventory.append(self.equipped_armor)
         self.equipped_armor = armor
+        return True
         
     def get_attack_power(self):
         base_attack = self.strength
@@ -152,12 +173,18 @@ class Character:
             'inventory': self.inventory,
             'equipped_weapon': self.equipped_weapon,
             'equipped_armor': self.equipped_armor,
-            'quests': self.quests,
-            'completed_quests': self.completed_quests
+            'quests': [self._serialize_quest(q) for q in self.quests],
+            'completed_quests': [self._serialize_quest(q) for q in self.completed_quests]
         }
         
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
+
+    @staticmethod
+    def _serialize_quest(quest):
+        if isinstance(quest, dict):
+            return quest
+        return quest.to_dict()
             
     @classmethod
     def load_from_file(cls, filename):
@@ -178,7 +205,9 @@ class Character:
         character.inventory = data['inventory']
         character.equipped_weapon = data['equipped_weapon']
         character.equipped_armor = data['equipped_armor']
-        character.quests = data['quests']
-        character.completed_quests = data['completed_quests']
+        character.quests = [Quest.from_dict(q) if isinstance(q, dict) else q
+                            for q in data['quests']]
+        character.completed_quests = [Quest.from_dict(q) if isinstance(q, dict) else q
+                                      for q in data['completed_quests']]
         
         return character

@@ -1,7 +1,7 @@
 import random
 
 class Quest:
-    def __init__(self, name, description, quest_type, target=None, target_amount=1, reward_exp=0, reward_gold=0, reward_items=None):
+    def __init__(self, name, description, quest_type, target=None, target_amount=1, reward_exp=0, reward_gold=0, reward_items=None, prerequisites=None):
         self.name = name
         self.description = description
         self.quest_type = quest_type  # 'kill', 'collect', 'explore', 'story'
@@ -11,7 +11,24 @@ class Quest:
         self.reward_exp = reward_exp
         self.reward_gold = reward_gold
         self.reward_items = reward_items or []
+        self.prerequisites = list(prerequisites) if prerequisites else []
         self.completed = False
+
+    def to_dict(self):
+        """Serialize only the mutable quest state; definitions stay in QuestManager."""
+        return {
+            'name': self.name,
+            'current_progress': self.current_progress,
+            'completed': self.completed
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        """Rebuild a lightweight state carrier from saved data."""
+        quest = cls(name=data['name'], description='', quest_type='')
+        quest.current_progress = data.get('current_progress', 0)
+        quest.completed = data.get('completed', False)
+        return quest
         
     def update_progress(self, progress_type, amount=1):
         """Update quest progress based on player actions"""
@@ -94,7 +111,8 @@ class QuestManager:
                 target_amount=5,
                 reward_exp=200,
                 reward_gold=150,
-                reward_items=[{'name': 'Silver Sword', 'type': 'weapon', 'damage': 15, 'description': 'A well-crafted silver blade'}]
+                reward_items=[{'name': 'Silver Sword', 'type': 'weapon', 'damage': 15, 'description': 'A well-crafted silver blade'}],
+                prerequisites=["First Blood"]
             ),
             Quest(
                 name="Cave Explorer",
@@ -104,7 +122,8 @@ class QuestManager:
                 target_amount=1,
                 reward_exp=300,
                 reward_gold=200,
-                reward_items=[{'name': 'Troll Hide Armor', 'type': 'armor', 'defense': 10, 'description': 'Tough armor made from troll hide'}]
+                reward_items=[{'name': 'Troll Hide Armor', 'type': 'armor', 'defense': 10, 'description': 'Tough armor made from troll hide'}],
+                prerequisites=["Orc Slayer"]
             ),
             Quest(
                 name="Merchant's Request",
@@ -114,7 +133,8 @@ class QuestManager:
                 target_amount=500,
                 reward_exp=150,
                 reward_gold=100,
-                reward_items=[{'name': 'Merchant Ring', 'type': 'accessory', 'description': 'Improves trading deals'}]
+                reward_items=[{'name': 'Merchant Ring', 'type': 'accessory', 'description': 'Improves trading deals'}],
+                prerequisites=["Treasure Hunter"]
             )
         ]
         
@@ -131,7 +151,8 @@ class QuestManager:
                 reward_items=[
                     {'name': 'Dragon Slayer Title', 'type': 'achievement', 'description': 'Proof of your dragon-slaying prowess'},
                     {'name': 'Master Health Potion', 'type': 'consumable', 'heal': 100, 'description': 'Restores 100 HP'}
-                ]
+                ],
+                prerequisites=["Cave Explorer"]
             ),
             Quest(
                 name="Hero's Journey",
@@ -165,7 +186,8 @@ class QuestManager:
                 target_amount=1,
                 reward_exp=200,
                 reward_gold=150,
-                reward_items=[{'name': 'Prophecy Scroll', 'type': 'key_item', 'description': 'Contains ancient wisdom'}]
+                reward_items=[{'name': 'Prophecy Scroll', 'type': 'key_item', 'description': 'Contains ancient wisdom'}],
+                prerequisites=["The Mysterious Village"]
             )
         ]
         
@@ -179,27 +201,108 @@ class QuestManager:
         # Start with starter quests
         self.available_quests = starter_quests.copy()
     
-    def get_available_quests(self, player_level):
+    def find_quest(self, name):
+        """Find a canonical quest by name (names are the stable quest identity)."""
+        for group in self.all_quests.values():
+            for quest in group:
+                if quest.name == name:
+                    return quest
+        return None
+
+    def _level_gate_met(self, quest, player_level):
+        if quest in self.all_quests['starter']:
+            return player_level <= 3
+        if quest in self.all_quests['intermediate']:
+            return player_level >= 3
+        if quest in self.all_quests['advanced']:
+            return player_level >= 6
+        return True  # story quests have no level gate
+
+    def _unmet_prerequisites(self, player, quest):
+        completed_names = {q.name for q in player.completed_quests}
+        return [name for name in quest.prerequisites if name not in completed_names]
+
+    def meets_requirements(self, player, quest):
+        """Check every acceptance rule against the unified player state."""
+        if quest.completed or any(q.name == quest.name for q in player.completed_quests):
+            return False
+        if any(q.name == quest.name for q in player.quests):
+            return False
+        if not self._level_gate_met(quest, player.level):
+            return False
+        if self._unmet_prerequisites(player, quest):
+            return False
+        return True
+
+    def get_available_quests(self, player_level, player=None):
         """Get quests appropriate for player level"""
         available = []
-        
+
         # Always show starter quests for low level players
         if player_level <= 3:
             available.extend([q for q in self.all_quests['starter'] if not q.completed])
-            
+
         # Add intermediate quests for mid-level players
         if player_level >= 3:
             available.extend([q for q in self.all_quests['intermediate'] if not q.completed])
-            
+
         # Add advanced quests for high-level players
         if player_level >= 6:
             available.extend([q for q in self.all_quests['advanced'] if not q.completed])
-            
+
         # Story quests based on story progress
         if self.story_progress >= 0:
             available.extend([q for q in self.all_quests['story'] if not q.completed])
-            
+
+        if player is not None:
+            available = [q for q in available
+                         if not any(pq.name == q.name for pq in player.quests)
+                         and not any(cq.name == q.name for cq in player.completed_quests)
+                         and not self._unmet_prerequisites(player, q)]
+
         return available
+
+    def sync_player(self, player):
+        """Reconcile a (possibly freshly loaded) player's quest state with the
+        canonical quest objects, so quest identity, progress and completion
+        live in exactly one place."""
+        saved_entries = list(player.quests) + list(player.completed_quests)
+        active = []
+        completed = []
+        seen = set()
+        story_completed = 0
+
+        for entry in saved_entries:
+            if isinstance(entry, dict):
+                name = entry.get('name')
+                progress = entry.get('current_progress', 0)
+                is_completed = entry.get('completed', False)
+            else:
+                name = entry.name
+                progress = entry.current_progress
+                is_completed = entry.completed
+
+            if not name or name in seen:
+                continue
+            seen.add(name)
+
+            canonical = self.find_quest(name)
+            if canonical is None:
+                continue  # quest no longer exists in definitions
+
+            canonical.current_progress = progress
+            canonical.completed = is_completed
+
+            if is_completed:
+                completed.append(canonical)
+                if canonical.quest_type == 'story':
+                    story_completed += 1
+            else:
+                active.append(canonical)
+
+        player.quests = active
+        player.completed_quests = completed
+        self.story_progress = max(self.story_progress, story_completed)
     
     def update_quest_progress(self, player, action_type, target=None, amount=1):
         """Update progress for all active quests"""
@@ -211,7 +314,7 @@ class QuestManager:
                 
             # Handle different quest types
             if quest.quest_type == f"kill_{target}" and action_type == "kill":
-                if quest.update_progress("kill", amount):
+                if quest.update_progress(quest.quest_type, amount):
                     completed_quests.append(quest)
                     
             elif quest.quest_type == "collect_gold" and action_type == "gold_gained":
@@ -249,8 +352,10 @@ class QuestManager:
             print(f"💰 Gained {quest.reward_gold} gold!")
             
         for item in quest.reward_items:
-            player.add_item(item)
-            print(f"🎁 Received: {item['name']}!")
+            if player.add_item(item):
+                print(f"🎁 Received: {item['name']}!")
+            else:
+                print(f"🎒 Inventory full! Could not receive: {item['name']}")
             
         # Move to completed quests
         if quest in player.quests:
@@ -263,21 +368,33 @@ class QuestManager:
     
     def assign_quest(self, player, quest_index):
         """Assign a quest to the player"""
-        available = self.get_available_quests(player.level)
-        
+        available = self.get_available_quests(player.level, player)
+
         if 0 <= quest_index < len(available):
             quest = available[quest_index]
-            if quest not in player.quests:
-                player.quests.append(quest)
-                print(f"📋 Quest accepted: {quest.name}")
-                print(f"📝 {quest.description}")
-                print(f"🎁 Reward: {quest.get_reward_text()}")
-                return True
+            if any(q.name == quest.name for q in player.quests):
+                print(f"❌ Quest already accepted: {quest.name}")
+                return False
+            if any(q.name == quest.name for q in player.completed_quests):
+                print(f"❌ Quest already completed: {quest.name}")
+                return False
+            unmet = self._unmet_prerequisites(player, quest)
+            if unmet:
+                print(f"❌ Prerequisites not met. Complete first: {', '.join(unmet)}")
+                return False
+            if not self._level_gate_met(quest, player.level):
+                print("❌ Your level is too low for this quest.")
+                return False
+            player.quests.append(quest)
+            print(f"📋 Quest accepted: {quest.name}")
+            print(f"📝 {quest.description}")
+            print(f"🎁 Reward: {quest.get_reward_text()}")
+            return True
         return False
     
-    def display_available_quests(self, player_level):
+    def display_available_quests(self, player_level, player=None):
         """Display all available quests"""
-        available = self.get_available_quests(player_level)
+        available = self.get_available_quests(player_level, player)
         
         if not available:
             print("No quests available at your current level.")

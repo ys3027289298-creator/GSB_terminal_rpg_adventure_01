@@ -5,6 +5,7 @@ from quests import QuestManager
 import os
 import sys
 import random
+import json
 
 class RPGGame:
     def __init__(self):
@@ -88,12 +89,13 @@ class RPGGame:
                 return
             if 1 <= choice <= len(weapons):
                 weapon = weapons[choice - 1]
-                self.player.inventory.remove(weapon)
-                self.player.equip_weapon(weapon)
-                print(f"⚔️ Equipped {weapon['name']}!")
-                
-                # Update quest progress
-                self.quest_manager.update_quest_progress(self.player, "weapon_equipped")
+                if self.player.equip_weapon(weapon):
+                    print(f"⚔️ Equipped {weapon['name']}!")
+
+                    # Update quest progress
+                    self.quest_manager.update_quest_progress(self.player, "weapon_equipped")
+                else:
+                    print("❌ Cannot equip that weapon (inventory full or already equipped).")
         except ValueError:
             print("❌ Invalid choice!")
     
@@ -113,9 +115,10 @@ class RPGGame:
                 return
             if 1 <= choice <= len(armors):
                 armor = armors[choice - 1]
-                self.player.inventory.remove(armor)
-                self.player.equip_armor(armor)
-                print(f"🛡️ Equipped {armor['name']}!")
+                if self.player.equip_armor(armor):
+                    print(f"🛡️ Equipped {armor['name']}!")
+                else:
+                    print("❌ Cannot equip that armor (inventory full or already equipped).")
         except ValueError:
             print("❌ Invalid choice!")
     
@@ -189,7 +192,7 @@ class RPGGame:
             choice = input("Choose an option: ").strip()
             
             if choice == "1":
-                self.quest_manager.display_available_quests(self.player.level)
+                self.quest_manager.display_available_quests(self.player.level, self.player)
                 quest_choice = input("Choose a quest to start or press Enter to cancel: ").strip()
                 if quest_choice.isdigit():
                     index = int(quest_choice) - 1
@@ -231,7 +234,13 @@ class RPGGame:
             index = int(choice) - 1
             if 0 <= index < len(files):
                 filename = f'saves/{files[index]}'
-                self.player = Character.load_from_file(filename)
+                try:
+                    loaded_player = Character.load_from_file(filename)
+                except (json.JSONDecodeError, KeyError, OSError) as error:
+                    print(f"❌ Save file is corrupted and cannot be loaded ({error}).")
+                    return
+                self.player = loaded_player
+                self.quest_manager.sync_player(self.player)
                 print(f"Loaded {filename}")
             else:
                 print("Invalid choice.")
